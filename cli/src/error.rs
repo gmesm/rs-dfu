@@ -9,6 +9,7 @@ pub enum CliError {
     UF2(UF2DecodeError),
     NoDFUDevice,
     ManyDFUDevices,
+    Other(String),
 }
 
 impl From<io::Error> for CliError {
@@ -37,6 +38,7 @@ impl Display for CliError {
             CliError::UF2(err) => write!(f, "{err}"),
             CliError::NoDFUDevice => write!(f, "No DFU device"),
             CliError::ManyDFUDevices => write!(f, "More than one DFU devices"),
+            CliError::Other(msg) => write!(f, "{msg}"),
         }
     }
 }

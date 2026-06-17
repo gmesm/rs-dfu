@@ -66,6 +66,9 @@ enum Commands {
         /// start address (ex: 0x0800000)
         #[clap(short, long, value_parser=maybe_hex::<u32>)]
         start_address: Option<u32>,
+        /// reboot into bootloader after flashing instead of launching firmware
+        #[clap(long)]
+        reboot_bootloader: bool,
     },
     /// reboot into EdgeTX DFU bootloader
     Reboot {
@@ -127,7 +130,8 @@ fn main() -> ExitCode {
             vendor,
             product,
             start_address,
-        } => write_file(file, vendor, product, start_address),
+            reboot_bootloader,
+        } => write_file(file, vendor, product, start_address, *reboot_bootloader),
         Commands::Reboot {
             address,
             vendor,
@@ -177,10 +181,11 @@ fn write_file(
     vid: &Option<u16>,
     pid: &Option<u16>,
     start_address: &Option<u32>,
+    reboot_bootloader: bool,
 ) -> Result<(), CliError> {
     let device = get_dfu_device(vid, pid)?;
     let data = fs::read(file)?;
-    download(&data, device, *start_address)?;
+    download(&data, device, *start_address, reboot_bootloader)?;
     Ok(())
 }
 

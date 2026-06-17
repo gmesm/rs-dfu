@@ -483,6 +483,7 @@ dependencies = [
  "clap-num",
  "dfu",
  "env_logger",
+ "log",
  "nusb",
  "parse-size",
  "uf2",

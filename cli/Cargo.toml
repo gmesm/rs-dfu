@@ -10,4 +10,5 @@ parse-size = "1.1"
 dfu = { path = "../dfu" }
 uf2 = { path = "../uf2" }
 env_logger = { workspace = true }
+log = { workspace = true }
 nusb = { workspace = true }
