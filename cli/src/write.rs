@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dfu::{DfuDevice, DfuError, find_dfu_devices};
+use dfu::{DfuConnection, DfuDevice, DfuError, find_dfu_devices};
 use uf2::{UF2RangeIterator, is_uf2_payload};
 
 use crate::CliError;
@@ -41,6 +41,7 @@ pub(crate) fn download(
     device: DfuDevice,
     start_address: Option<u32>,
     reboot_bootloader: bool,
+    erase_calibration: bool,
 ) -> Result<(), CliError> {
     let mut device = device;
     let mut uf2_magic_addr: Option<u32> = None;
@@ -77,6 +78,10 @@ pub(crate) fn download(
         }
     }
     log::warn!("UF2 loop complete");
+
+    if erase_calibration {
+        erase_calibration_segment(&device)?;
+    }
 
     if reboot_bootloader {
         let (magic_addr, bootloader_addr) = match (uf2_magic_addr, uf2_firmware_addr) {
@@ -117,6 +122,56 @@ pub(crate) fn download(
     Ok(())
 }
 
+fn erase_pages(connection: &DfuConnection, pages: Vec<u32>) -> Result<(), DfuError> {
+    let total = pages.len();
+    for (i, page_addr) in pages.into_iter().enumerate() {
+        print!("\r  Erasing page {:2} of {:2} @ 0x{:08x}", i + 1, total, page_addr);
+        let _ = io::stdout().flush();
+        if let Err(err) = connection.dfuse_page_erase(page_addr) {
+            println!(" ❌");
+            return Err(err);
+        }
+    }
+    println!();
+    Ok(())
+}
+
+fn erase_calibration_segment(device: &DfuDevice) -> Result<(), CliError> {
+    let intf = device
+        .interfaces()
+        .iter()
+        .find(|i| i.layout().name.contains("CALIBFLASH"))
+        .ok_or_else(|| {
+            log::warn!("CALIBFLASH not found; available interfaces:");
+            for i in device.interfaces() {
+                log::warn!(
+                    "  intf={} alt={} \"{}\"",
+                    i.interface(), i.alt_setting(), i.layout().name,
+                );
+                for seg in i.layout().segments.iter() {
+                    log::warn!(
+                        "    0x{:08x}-0x{:08x} r={} e={} w={}",
+                        seg.start_addr(), seg.end_addr(),
+                        seg.readable(), seg.erasable(), seg.writable(),
+                    );
+                }
+            }
+            CliError::Other("CALIBFLASH memory segment not found on device".to_string())
+        })?;
+
+    println!("Erasing CALIBFLASH...");
+    log::warn!(
+        "connect(intf={}, alt={} \"{}\") for erase_calibration",
+        intf.interface(), intf.alt_setting(), intf.layout().name,
+    );
+    let connection = device.connect(intf.interface(), intf.alt_setting())?;
+
+    let start = intf.layout().segments.first().start_addr();
+    let end = intf.layout().segments.last().end_addr() - 1;
+    erase_pages(&connection, intf.get_erase_pages(start, end))?;
+    Ok(())
+}
+
 pub(crate) fn reset_state(device: &DfuDevice) -> Result<(), DfuError> {
     println!("Resetting device state...");
     log::warn!("connect(intf=0, alt=0 \"{}\") for reset_state", intf_name(device, 0, 0));
@@ -143,24 +198,7 @@ fn download_range(
     log::warn!("connect(intf={}, alt={} \"{}\") for download_range 0x{:08x}", intf.interface(), intf.alt_setting(), intf.layout().name, start_address);
     let connection = device.connect(intf.interface(), intf.alt_setting())?;
 
-    // erase first
-    let erase_pages = intf.get_erase_pages(start_address, end_address);
-    let pages = erase_pages.len();
-
-    for (page, page_addr) in erase_pages.into_iter().enumerate() {
-        print!(
-            "\r  Erasing page {:2} of {:2} @ 0x{:08x}",
-            page + 1,
-            pages,
-            page_addr,
-        );
-        let _ = io::stdout().flush();
-        if let Err(err) = connection.dfuse_page_erase(page_addr) {
-            println!(" ❌");
-            return Err(err);
-        }
-    }
-    println!();
+    erase_pages(&connection, intf.get_erase_pages(start_address, end_address))?;
 
     let mut addr = start_address;
     let mut bytes_downloaded: usize = 0;

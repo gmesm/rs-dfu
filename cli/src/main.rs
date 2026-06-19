@@ -69,6 +69,9 @@ enum Commands {
         /// reboot into bootloader after flashing instead of launching firmware
         #[clap(long)]
         reboot_bootloader: bool,
+        /// erase the CALIBFLASH memory segment before flashing
+        #[clap(long)]
+        erase_calibration: bool,
     },
     /// reboot into EdgeTX DFU bootloader
     Reboot {
@@ -131,7 +134,8 @@ fn main() -> ExitCode {
             product,
             start_address,
             reboot_bootloader,
-        } => write_file(file, vendor, product, start_address, *reboot_bootloader),
+            erase_calibration,
+        } => write_file(file, vendor, product, start_address, *reboot_bootloader, *erase_calibration),
         Commands::Reboot {
             address,
             vendor,
@@ -182,10 +186,11 @@ fn write_file(
     pid: &Option<u16>,
     start_address: &Option<u32>,
     reboot_bootloader: bool,
+    erase_calibration: bool,
 ) -> Result<(), CliError> {
     let device = get_dfu_device(vid, pid)?;
     let data = fs::read(file)?;
-    download(&data, device, *start_address, reboot_bootloader)?;
+    download(&data, device, *start_address, reboot_bootloader, erase_calibration)?;
     Ok(())
 }
 
